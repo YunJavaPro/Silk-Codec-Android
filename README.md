@@ -41,7 +41,7 @@ int type = codec.getFileType("/sdcard/somefile");
 ```
 
 ###  错误码说明
-- `0` = 成功
+**- `0` = 成功
 - `-1` = 无法获取文件扩展名
 - `-2` = 不支持的音频格式
 - `-3` = PCM 转 Silk 需要额外参数，请使用 pcmToSilk
@@ -56,7 +56,7 @@ int type = codec.getFileType("/sdcard/somefile");
 - `-401 ~ -402` = OGG 解码/文件错误
 - `-501 ~ -502` = WAV 解码/文件错误
 - `-601 ~ -602` = FLAC 解码/文件错误
-- `-701 ~ -703` = PCM 参数/文件错误
+- `-701 ~ -703` = PCM 参数/文件错误**
 
 ---
 
