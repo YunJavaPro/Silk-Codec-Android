@@ -1,5 +1,5 @@
 # Silk-Codec-Android
-Android 平台一站式音频编解码工具，支持主流音频与微信 SILK 格式高速转换。
+Android 平台音频编解码工具，支持主流音频与 SILK 格式高速转换。
 
 基于 Silk SDK、dr_libs、stb_vorbis 实现底层解码，JNI 封装，全格式自动识别，支持高采样率 48000Hz。
 
@@ -40,7 +40,7 @@ result = codec.pcmToSilk("/sdcard/test.pcm", "/sdcard/out.silk", 24000, 48000, 1
 int type = codec.getFileType("/sdcard/somefile");
 ```
 
-**错误码说明**
+###错误码说明
 - `0` = 成功
 - `-1` = 无法获取文件扩展名
 - `-2` = 不支持的音频格式
@@ -57,14 +57,6 @@ int type = codec.getFileType("/sdcard/somefile");
 - `-501 ~ -502` = WAV 解码/文件错误
 - `-601 ~ -602` = FLAC 解码/文件错误
 - `-701 ~ -703` = PCM 参数/文件错误
-
----
-
-##  适用场景
-- 微信语音编码/解码
-- 语音消息体积压缩
-- 音频格式批量转换
-- 语音录制、导出、处理
 
 ---
 
