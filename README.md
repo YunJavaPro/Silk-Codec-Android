@@ -1,7 +1,8 @@
 # Silk-Codec-Android
 支持主流音频与 SILK 格式高速转换。
 
-基于 Silk SDK、dr_libs、stb_vorbis 实现底层解码，JNI 封装，支持格式自动识别，支持高采样率 48000Hz。
+基于 Silk SDK、dr_libs、stb_vorbis 实现底层解码，JNI 封装，支持格式自动识别，最高支持 48000Hz 采样率。
+项目体积极小，完整库仅 500KB 左右。
 
 ---
 
