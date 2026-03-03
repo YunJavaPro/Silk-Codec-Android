@@ -5,30 +5,6 @@ Android 平台一站式音频编解码工具，支持主流音频与微信 SILK 
 
 ---
 
-##  支持功能
-
-### 🔹 音频 → Silk
-- MP3 → Silk
-- WAV → Silk
-- FLAC → Silk
-- OGG → Silk
-- PCM → Silk
-- 自动识别格式 → Silk
-
-### 🔹 Silk → 音频
-- Silk → MP3
-
-### 🔹 音频 → PCM
-- MP3 → PCM
-- WAV → PCM
-- FLAC → PCM
-- OGG → PCM
-- 自动识别格式 → PCM
-
-### 🔹 工具方法
-
----
-
 ##  支持格式
 **输入：**
 mp3 / wav / flac / ogg / oga / amr / pcm / raw / silk / slk
