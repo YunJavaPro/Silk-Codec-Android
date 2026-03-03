@@ -61,6 +61,7 @@ result = codec.pcmToSilk("/sdcard/test.pcm", "/sdcard/out.silk", 24000, 48000, 1
 
 // 5. 获取文件真实类型（文件头识别）
 int type = codec.getFileType("/sdcard/somefile");
+```
 
 
 ---
