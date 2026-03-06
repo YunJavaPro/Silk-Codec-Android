@@ -3,7 +3,7 @@
 
 项目体积极小，完整库仅 500KB 左右。
 
-基于 Silk SDK、dr_libs、stb_vorbis 实现底层解码，JNI 封装，支持格式自动识别，最高支持 48000Hz 采样率。
+基于 Silk SDK、dr_libs、stb_vorbis、lame 实现底层解码，JNI 封装，支持格式自动识别，最高支持 48000Hz 采样率。
 
 ---
 
