@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">Silk Codec</string>
+    <string name="input_file_path">输入文件路径</string>
+    <string name="output_file_path">输出文件夹</string>
+    <string name="sample_rate">采样率</string>
+    <string name="convert_to">转换为</string>
+    <string name="silk_to_mp3">Silk → MP3</string>
+    <string name="mp3_to_silk">MP3 → Silk</string>
+    <string name="any_to_silk">任意格式 → Silk</string>
+    <string name="any_to_pcm">任意格式 → PCM</string>
+    <string name="log">日志</string>
+    <string name="clear">清空</string>
+</resources>
