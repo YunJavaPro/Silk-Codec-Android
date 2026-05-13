@@ -105,7 +105,7 @@ dependencyResolutionManagement {
 build.gradle.kts (Module):
 ```kotlin
 dependencies {
-    implementation("com.github.YunJavaPro:silk-codec:1.0.0")
+    implementation("com.github.YunJavaPro:Silk-Codec-Android:$version")
 }
 ```
 
