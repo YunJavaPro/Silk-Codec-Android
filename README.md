@@ -5,6 +5,7 @@
 [![Architecture](https://img.shields.io/badge/Architecture-arm64--v8a-yellow.svg)](#)
 [![Min SDK](https://img.shields.io/badge/Min%20SDK-26-orange.svg)](#)
 [![Download](https://img.shields.io/badge/Download-JitPack-blueviolet.svg)](https://jitpack.io)
+[![JitPack](https://jitpack.io/v/YunJavaPro/Silk-Codec-Android.svg)](https://jitpack.io/#YunJavaPro/Silk-Codec-Android)
 
 > 轻量级 Android 音频编解码库，基于 Silk SDK / dr_libs / stb_vorbis / lame 实现底层解码，JNI 封装，最高支持 48000Hz 采样率。
 
