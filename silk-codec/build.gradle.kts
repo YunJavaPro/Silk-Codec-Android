@@ -6,7 +6,6 @@ plugins {
 android {
     namespace = "me.yun.silk"
     compileSdk = 36
-    ndkVersion = "29.0.14033849"
 
     defaultConfig {
         minSdk = 26
