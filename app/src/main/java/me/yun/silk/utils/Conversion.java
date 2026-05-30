@@ -46,22 +46,6 @@ public class Conversion {
         return AacCodec.silkToM4a(silkPath, m4aPath, codec, hz);
     }
 
-    public static int mp3ToAac(String mp3Path, String aacPath, int sampleRate) {
-        return AacCodec.mp3ToAac(mp3Path, aacPath, sampleRate);
-    }
-
-    public static int mp3ToM4a(String mp3Path, String m4aPath, int sampleRate) {
-        return AacCodec.mp3ToM4a(mp3Path, m4aPath, sampleRate);
-    }
-
-    public static int wavToAac(String wavPath, String aacPath, int sampleRate) {
-        return AacCodec.wavToAac(wavPath, aacPath, sampleRate);
-    }
-
-    public static int wavToM4a(String wavPath, String m4aPath, int sampleRate) {
-        return AacCodec.wavToM4a(wavPath, m4aPath, sampleRate);
-    }
-
     public static int m4aToSilk(SilkCodec codec, String m4aPath, String silkPath, int hz) {
         return AacCodec.m4aToSilk(m4aPath, silkPath, codec, hz);
     }
