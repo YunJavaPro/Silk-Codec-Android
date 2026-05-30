@@ -1525,21 +1525,22 @@ static long long getSilkDurationMs(const char *path) {
 }
 
 /**
- * 获取音频时长 (单位：毫秒)
- * 
- * 返回值: long (1秒 = 1000)
+ * 获取音频时长（毫秒）
+ *
+ * 支持格式: Silk, MP3, WAV, FLAC, OGG, M4A, MP4
+ * 返回值: 音频时长，单位毫秒
  **/
 JNIEXPORT jlong JNICALL Java_me_yun_silk_SilkCodec_getDuration(
     JNIEnv *env, jobject thiz, jstring filePath) {
     const char *path = env->GetStringUTFChars(filePath, 0);
     int type = detectFileType(path);
     jlong durationMs = 0;
-
+ 
     switch (type) {
         case FILE_TYPE_SILK:
             durationMs = (jlong)getSilkDurationMs(path);
             break;
-
+ 
         case FILE_TYPE_MP3: {
             drmp3 mp3;
             if (drmp3_init_file(&mp3, path, NULL)) {
@@ -1549,7 +1550,7 @@ JNIEXPORT jlong JNICALL Java_me_yun_silk_SilkCodec_getDuration(
             }
             break;
         }
-
+ 
         case FILE_TYPE_WAV: {
             drwav wav;
             if (drwav_init_file(&wav, path, NULL)) {
@@ -1558,7 +1559,7 @@ JNIEXPORT jlong JNICALL Java_me_yun_silk_SilkCodec_getDuration(
             }
             break;
         }
-
+ 
         case FILE_TYPE_FLAC: {
             drflac *pFlac = drflac_open_file(path, NULL);
             if (pFlac) {
@@ -1567,7 +1568,7 @@ JNIEXPORT jlong JNICALL Java_me_yun_silk_SilkCodec_getDuration(
             }
             break;
         }
-
+ 
         case FILE_TYPE_OGG: {
             int error;
             stb_vorbis *v = stb_vorbis_open_filename(path, &error, NULL);
@@ -1578,12 +1579,32 @@ JNIEXPORT jlong JNICALL Java_me_yun_silk_SilkCodec_getDuration(
             }
             break;
         }
-
+ 
+        case FILE_TYPE_M4A:
+        case FILE_TYPE_MP4: {
+            // 调用 Java 层 AacCodec 获取时长
+            jclass aacCodecClass = env->FindClass("me/yun/silk/AacCodec");
+            if (aacCodecClass != NULL) {
+                jmethodID getDurationMethod = env->GetStaticMethodID(
+                    aacCodecClass,
+                    "getDuration",
+                    "(Ljava/lang/String;)J");
+                
+                if (getDurationMethod != NULL) {
+                    durationMs = (jlong)env->CallStaticLongMethod(
+                        aacCodecClass,
+                        getDurationMethod,
+                        filePath);
+                }
+            }
+            break;
+        }
+ 
         default:
             durationMs = 0;
             break;
     }
-
+ 
     env->ReleaseStringUTFChars(filePath, path);
     return durationMs;
 }

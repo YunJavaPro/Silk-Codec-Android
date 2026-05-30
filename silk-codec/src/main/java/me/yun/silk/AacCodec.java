@@ -596,6 +596,28 @@ public class AacCodec {
         return decodeAacFile(m4aPath, pcmPath, callback);
     }
 
+    public static long getDuration(String filePath) {
+        android.media.MediaMetadataRetriever retriever = null;
+        try {
+            retriever = new android.media.MediaMetadataRetriever();
+            retriever.setDataSource(filePath);
+            String durationStr = retriever.extractMetadata(
+                android.media.MediaMetadataRetriever.METADATA_KEY_DURATION);
+            if (durationStr != null) {
+                return Long.parseLong(durationStr);
+            }
+        } catch (Exception e) {
+        } finally {
+            if (retriever != null) {
+                try {
+                    retriever.release();
+                } catch (Exception e) {
+                }
+            }
+        }
+        return 0;
+    }
+
     public static String getErrorMessage(int code) {
         if (code == 0) return "成功";
         if (code >= -801 && code <= -802) return "AAC/M4A 解码错误 (文件读取失败)";
