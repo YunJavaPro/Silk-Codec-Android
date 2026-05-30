@@ -1,4 +1,3 @@
-// src/main/java/me/yun/silk/utils/UriUtils.java
 package me.yun.silk.utils;
 
 import android.content.ContentUris;
@@ -11,16 +10,10 @@ import android.provider.MediaStore;
 
 public class UriUtils {
 
-    /**
-     * 将系统选择返回的 Uri 解析为真实的本地绝对路径
-     * 取消了拷贝到缓存目录的做法，直接还原原文件路径
-     */
     public static String getPathFromUri(final Context context, final Uri uri) {
         if (uri == null) return null;
 
-        // 1. DocumentProvider (系统文件管理器选择的)
         if (DocumentsContract.isDocumentUri(context, uri)) {
-            // ExternalStorageProvider (外部存储)
             if (isExternalStorageDocument(uri)) {
                 final String docId = DocumentsContract.getDocumentId(uri);
                 final String[] split = docId.split(":");
@@ -32,7 +25,6 @@ public class UriUtils {
                     return "/storage/" + type + "/" + split[1];
                 }
             }
-            // DownloadsProvider (下载目录)
             else if (isDownloadsDocument(uri)) {
                 final String id = DocumentsContract.getDocumentId(uri);
                 if (id != null && id.startsWith("raw:")) {
@@ -50,7 +42,6 @@ public class UriUtils {
                     } catch (Exception ignore) {}
                 }
             }
-            // MediaProvider (媒体库)
             else if (isMediaDocument(uri)) {
                 final String docId = DocumentsContract.getDocumentId(uri);
                 final String[] split = docId.split(":");
@@ -70,11 +61,9 @@ public class UriUtils {
                 return getDataColumn(context, contentUri, selection, selectionArgs);
             }
         }
-        // 2. MediaStore (and general)
         else if ("content".equalsIgnoreCase(uri.getScheme())) {
             return getDataColumn(context, uri, null, null);
         }
-        // 3. File
         else if ("file".equalsIgnoreCase(uri.getScheme())) {
             return uri.getPath();
         }
@@ -82,9 +71,6 @@ public class UriUtils {
         return null;
     }
 
-    /**
-     * 解析选择文件夹返回的 Tree Uri，获取真实的绝对路径
-     */
     public static String getTreePathFromUri(Context context, Uri treeUri) {
         if (treeUri == null) return null;
 
@@ -114,9 +100,6 @@ public class UriUtils {
         return null;
     }
 
-    /**
-     * 通过游标获取 _data 字段 (即绝对物理路径)
-     */
     private static String getDataColumn(Context context, Uri uri, String selection, String[] selectionArgs) {
         Cursor cursor = null;
         final String column = "_data";

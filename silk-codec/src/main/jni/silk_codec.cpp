@@ -143,6 +143,60 @@ static const unsigned char WECHAT_SILK_HEADER[] = {0x02, '#', '!', 'S', 'I',
 static const unsigned char SILK_TERMINATOR[] = {0xFF, 0xFF};
 #define SILK_TERMINATOR_LEN 2
 
+/* ==================== JNI 调用 Java AacCodec 辅助函数 ==================== */
+
+static JavaVM* g_jvm = NULL;
+
+jint JNI_OnLoad(JavaVM* vm, void* reserved) {
+    g_jvm = vm;
+    return JNI_VERSION_1_6;
+}
+
+static jclass findClass(JNIEnv* env, const char* className) {
+    jclass clazz = env->FindClass(className);
+    if (clazz == NULL) {
+        return NULL;
+    }
+    return clazz;
+}
+
+static int callAacCodecMethod(JNIEnv* env, jobject thiz,
+                              const char* methodName, const char* methodSig,
+                              const char* inputPath, const char* outputPath, jint hz) {
+    if (g_jvm == NULL) {
+        return -1;
+    }
+
+    jclass clazz = findClass(env, "me/yun/silk/AacCodec");
+    if (clazz == NULL) {
+        return -2;
+    }
+
+    jmethodID method = env->GetStaticMethodID(clazz, methodName, methodSig);
+    if (method == NULL) {
+        env->DeleteLocalRef(clazz);
+        return -3;
+    }
+
+    jstring jInputPath = env->NewStringUTF(inputPath);
+    jstring jOutputPath = env->NewStringUTF(outputPath);
+
+    int result = -1;
+    if (strcmp(methodSig, "(Ljava/lang/String;Ljava/lang/String;Lme/yun/silk/SilkCodec;I)I") == 0) {
+        result = env->CallStaticIntMethod(clazz, method, jInputPath, jOutputPath, thiz, hz);
+    } else if (strcmp(methodSig, "(Ljava/lang/String;Ljava/lang/String;)I") == 0) {
+        result = env->CallStaticIntMethod(clazz, method, jInputPath, jOutputPath);
+    } else if (strcmp(methodSig, "(Ljava/lang/String;Ljava/lang/String;II)I") == 0) {
+        result = env->CallStaticIntMethod(clazz, method, jInputPath, jOutputPath, hz, 1);
+    }
+
+    env->DeleteLocalRef(jInputPath);
+    env->DeleteLocalRef(jOutputPath);
+    env->DeleteLocalRef(clazz);
+
+    return result;
+}
+
 /* ==================== 辅助函数：检测文件实际类型 ==================== */
 /**
  * 文件类型常量定义
@@ -154,37 +208,78 @@ static const unsigned char SILK_TERMINATOR[] = {0xFF, 0xFF};
 #define FILE_TYPE_FLAC      4   /* FLAC 无损音频格式 */
 #define FILE_TYPE_OGG       5   /* OGG Vorbis 音频格式 */
 #define FILE_TYPE_PCM       6   /* 原始 PCM 数据 */
-#define FILE_TYPE_M4A       7   /* M4A 音频格式 */
+#define FILE_TYPE_M4A       7   /* M4A 纯音频格式 */
+#define FILE_TYPE_MP4       8   /* MP4 音视频格式 */
+
+/**
+ * isM4aBrand - 检测是否为 M4A 纯音频品牌标识
+ *
+ * @param brand 品牌标识字符串 (4字节)
+ * @return      1=M4A音频格式, 0=否
+ */
+static int isM4aBrand(const unsigned char *brand) {
+    if (memcmp(brand, "M4A ", 4) == 0) return 1;
+    if (memcmp(brand, "M4B ", 4) == 0) return 1;
+    if (memcmp(brand, "M4P ", 4) == 0) return 1;
+    return 0;
+}
+
+/**
+ * isMp4Brand - 检测是否为 MP4 音视频品牌标识
+ *
+ * @param brand 品牌标识字符串 (4字节)
+ * @return      1=MP4音视频格式, 0=否
+ */
+static int isMp4Brand(const unsigned char *brand) {
+    if (memcmp(brand, "mp41", 4) == 0) return 1;
+    if (memcmp(brand, "mp42", 4) == 0) return 1;
+    if (memcmp(brand, "mp71", 4) == 0) return 1;
+    if (memcmp(brand, "M4V ", 4) == 0) return 1;
+    if (memcmp(brand, "qt  ", 4) == 0) return 1;
+    if (memcmp(brand, "avc1", 4) == 0) return 1;
+    if (memcmp(brand, "hev1", 4) == 0) return 1;
+    if (memcmp(brand, "hvc1", 4) == 0) return 1;
+    if (memcmp(brand, "ac3 ", 4) == 0) return 1;
+    if (memcmp(brand, "ec-3", 4) == 0) return 1;
+    if (memcmp(brand, "mlpa", 4) == 0) return 1;
+    if (memcmp(brand, "msf1", 4) == 0) return 1;
+    if (memcmp(brand, "LCM ", 4) == 0) return 1;
+    if (memcmp(brand, "iso3", 4) == 0) return 1;
+    if (memcmp(brand, "iso4", 4) == 0) return 1;
+    if (memcmp(brand, "iso5", 4) == 0) return 1;
+    if (memcmp(brand, "iso6", 4) == 0) return 1;
+    return 0;
+}
+
+/**
+ * detectMp4Type - 检测 MP4/M4A 容器类型
+ *
+ * 读取 MP4 文件的 ftyp box，检查品牌标识确定类型
+ *
+ * @param path 文件路径
+ * @return     1=M4A, 2=MP4, 0=未知
+ */
+
 
 /**
  * detectFileType - 通过文件头检测文件实际类型
- * 
+ *
  * @param path 文件路径
  * @return     文件类型常量（FILE_TYPE_*）
- * 
+ *
  * 说明：
- *   此函数通过读取文件头（魔数/签名）来检测文件的实际格式，
- *   而不是依赖文件扩展名。
- * 
- * 支持检测的格式：
- *   - Silk:  以 0x02 + "#!SILK_V3" 或 "#!SILK_V3" 开头
- *   - MP3:   以 0xFF 0xE* (帧同步) 或 "ID3" (ID3标签) 开头
- *   - WAV:   以 "RIFF....WAVE" 开头
- *   - FLAC:  以 "fLaC" 开头
- *   - OGG:   以 "OggS" 开头
- *   - M4A:   以 ftyp 开头（MP4 容器）
- *   - PCM:   无文件头，作为默认返回值
+ *   此函数通过读取文件头（魔数/签名）来检测文件的实际格式。
  */
 static int detectFileType(const char *path) {
   FILE *f = fopen(path, "rb");
   if (!f) return FILE_TYPE_UNKNOWN;
-  
-  unsigned char header[32];
-  int readLen = fread(header, 1, 32, f);
+
+  unsigned char header[64];
+  int readLen = fread(header, 1, 64, f);
   fclose(f);
-  
+
   if (readLen < 4) return FILE_TYPE_UNKNOWN;
-  
+
   /* 检测 Silk 格式（微信语音格式） */
   if (readLen >= 10) {
     if (header[0] == 0x02 && memcmp(header + 1, "#!SILK_V3", 9) == 0) {
@@ -194,57 +289,108 @@ static int detectFileType(const char *path) {
       return FILE_TYPE_SILK;
     }
   }
-  
-  /* 检测 MP3 格式 (帧同步: 0xFF 0xE* 或 ID3 标签) */
+
+  /* 检测 MP3 格式 (ID3 标签) */
   if (memcmp(header, "ID3", 3) == 0) {
     return FILE_TYPE_MP3;
   }
+
+  /* 检测 AAC 格式 (ADTS 头: 0xFF 0xFx)
+   * ADTS 同步字是 0xFFF，MP3 同步字是 0xFFE
+   * 通过检查 header[1] 的高 4 位区分:
+   *   - 0xF* = AAC ADTS
+   *   - 0xE* = MP3 帧同步
+   */
+  if (header[0] == 0xFF && (header[1] & 0xF0) == 0xF0) {
+    return FILE_TYPE_M4A;
+  }
+
+  /* 检测 MP3 格式 (帧同步: 0xFF 0xEx) */
   if (header[0] == 0xFF && (header[1] & 0xE0) == 0xE0) {
     return FILE_TYPE_MP3;
   }
-  
+
   /* 检测 WAV 格式 */
   if (readLen >= 12 && memcmp(header, "RIFF", 4) == 0 && memcmp(header + 8, "WAVE", 4) == 0) {
     return FILE_TYPE_WAV;
   }
-  
+
   /* 检测 FLAC 格式 */
   if (memcmp(header, "fLaC", 4) == 0) {
     return FILE_TYPE_FLAC;
   }
-  
+
   /* 检测 OGG Vorbis 格式 */
   if (memcmp(header, "OggS", 4) == 0) {
     return FILE_TYPE_OGG;
   }
-  
-  /* 检测 M4A 格式 (MP4 容器)
-   * MP4 文件结构: [大小(4字节)] + "ftyp" + [品牌标识]
+
+  /* 检测 M4A/MP4 格式 (MP4 容器)
+   * MP4 文件结构: [大小(4字节)] + "ftyp" + [品牌标识列表]
+   * 通过检查所有品牌标识来判断是纯音频还是视频
    */
   if (readLen >= 12 && memcmp(header + 4, "ftyp", 4) == 0) {
+    int boxSize = (header[0] << 24) | (header[1] << 16) | (header[2] << 8) | header[3];
+    int brandCount = (boxSize - 16) / 4 + 1;
+
+    int hasVideoBrand = 0;
+    int hasM4aBrand = 0;
+
+    for (int i = 0; i < brandCount && (8 + i * 4) < readLen; i++) {
+        const unsigned char *brand = header + 8 + i * 4;
+
+        if (isM4aBrand(brand)) {
+            hasM4aBrand = 1;
+        }
+        if (isMp4Brand(brand)) {
+            hasVideoBrand = 1;
+        }
+        if (memcmp(brand, "isom", 4) == 0) {
+            hasVideoBrand = 1;
+        }
+        if (memcmp(brand, "iso2", 4) == 0) {
+            hasVideoBrand = 1;
+        }
+    }
+
+    if (hasVideoBrand && !hasM4aBrand) {
+      return FILE_TYPE_MP4;
+    }
     return FILE_TYPE_M4A;
   }
-  
-  /* 无法识别的格式，为原始 PCM 数据 */
-  return FILE_TYPE_PCM;
+
+  /* 检测 AMR 格式 (3GPP 音频) */
+  if (readLen >= 6) {
+    if (memcmp(header, "#!AMR", 5) == 0) {
+      return FILE_TYPE_M4A;
+    }
+    if (memcmp(header, "#!AMR-WB", 9) == 0) {
+      return FILE_TYPE_M4A;
+    }
+  }
+
+  /* 检测 3GP 格式 */
+  if (readLen >= 12 && memcmp(header + 4, "ftyp", 4) == 0) {
+    if (memcmp(header + 8, "3gp4", 4) == 0 ||
+        memcmp(header + 8, "3gp5", 4) == 0 ||
+        memcmp(header + 8, "3gp6", 4) == 0 ||
+        memcmp(header + 8, "3gp ", 4) == 0) {
+      return FILE_TYPE_MP4;
+    }
+  }
+
+  /* 无法识别的格式 */
+  return FILE_TYPE_UNKNOWN;
 }
 
 extern "C" {
 
-/* =========================================================================
+/**
  * 获取文件类型
  * 
  * 通过文件头检测文件实际类型
  * 返回值: 文件类型常量
- *   0 = 未知类型
- *   1 = Silk
- *   2 = MP3
- *   3 = WAV
- *   4 = FLAC
- *   5 = OGG
- *   6 = PCM
- *   7 = M4A
- * ========================================================================= */
+ **/
 JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_getFileType(
     JNIEnv *env, jobject thiz, jstring filePath) {
   const char *path = env->GetStringUTFChars(filePath, 0);
@@ -253,15 +399,15 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_getFileType(
   return type;
 }
 
-/* =========================================================================
+/**
  * MP3 转 Silk
- * ========================================================================= */
+ **/
 JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_mp3ToSilk(
     JNIEnv *env, jobject thiz, jstring mp3Path, jstring silkPath, jint hz) {
   const char *in_p = env->GetStringUTFChars(mp3Path, 0);
   const char *out_p = env->GetStringUTFChars(silkPath, 0);
 
-  /* ---------- 初始化 MP3 解码器 ---------- */
+  /* 初始化 MP3 解码器 */
   drmp3 mp3;
   if (!drmp3_init_file(&mp3, in_p, NULL)) {
     env->ReleaseStringUTFChars(mp3Path, in_p);
@@ -269,7 +415,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_mp3ToSilk(
     return -301;
   }
 
-  /* ---------- 打开输出文件 ---------- */
+  /* 打开输出文件 */
   FILE *fout = fopen(out_p, "wb");
   if (!fout) {
     drmp3_uninit(&mp3);
@@ -279,17 +425,17 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_mp3ToSilk(
   }
   setvbuf(fout, NULL, _IOFBF, 65536);
 
-  /* ---------- 写入微信 Silk 文件头 ---------- */
+  /* 写入微信 Silk 文件头 */
   fwrite(WECHAT_SILK_HEADER, 1, WECHAT_SILK_HEADER_LEN, fout);
 
-  /* ---------- 初始化 Silk 编码器 ---------- */
+  /* 初始化 Silk 编码器 */
   SKP_int32 encSize;
   SKP_Silk_SDK_Get_Encoder_Size(&encSize);
   void *psEnc = malloc(encSize);
   SKP_SILK_SDK_EncControlStruct encStatus;
   SKP_Silk_SDK_InitEncoder(psEnc, &encStatus);
 
-  /* ---------- 音频参数配置 (集中设置) ---------- */
+  /* 音频参数配置 (集中设置) */
   SKP_SILK_SDK_EncControlStruct encCtrl;
   memset(&encCtrl, 0, sizeof(encCtrl));
 
@@ -321,13 +467,13 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_mp3ToSilk(
   encCtrl.useDTX = SILK_USE_DTX;
   encCtrl.useInBandFEC = SILK_USE_IN_BAND_FEC;
 
-/* ---------- PCM 缓冲区 ---------- */
+/* PCM 缓冲区 */
 #define READ_FRAMES 1152
   short *pcm_buffer = (short *)malloc(frameSize * 10 * sizeof(short));
   int pcm_buffer_len = 0;
   drmp3_int16 mp3_pcm[READ_FRAMES * 2];
 
-  /* ---------- 编码循环 ---------- */
+  /* 编码循环 */
   while (1) {
     int frames_read = drmp3_read_pcm_frames_s16(&mp3, READ_FRAMES, mp3_pcm);
     if (frames_read <= 0)
@@ -366,10 +512,10 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_mp3ToSilk(
     }
   }
 
-  /* ---------- 写入结束标记 ---------- */
+  /* 写入结束标记 */
   fwrite(SILK_TERMINATOR, 1, SILK_TERMINATOR_LEN, fout);
 
-  /* ---------- 资源释放 ---------- */
+  /* 资源释放 */
   free(pcm_buffer);
   free(psEnc);
   drmp3_uninit(&mp3);
@@ -380,15 +526,15 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_mp3ToSilk(
   return 0;
 }
 
-/* =========================================================================
+/**
  * WAV 转 Silk
- * ========================================================================= */
+ **/
 JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_wavToSilk(
     JNIEnv *env, jobject thiz, jstring wavPath, jstring silkPath, jint hz) {
   const char *in_p = env->GetStringUTFChars(wavPath, 0);
   const char *out_p = env->GetStringUTFChars(silkPath, 0);
 
-  /* ---------- 初始化 WAV 解码器 ---------- */
+  /* 初始化 WAV 解码器 */
   drwav wav;
   if (!drwav_init_file(&wav, in_p, NULL)) {
     env->ReleaseStringUTFChars(wavPath, in_p);
@@ -396,7 +542,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_wavToSilk(
     return -501;
   }
 
-  /* ---------- 打开输出文件 ---------- */
+  /* 打开输出文件 */
   FILE *fout = fopen(out_p, "wb");
   if (!fout) {
     drwav_uninit(&wav);
@@ -405,17 +551,17 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_wavToSilk(
     return -502;
   }
 
-  /* ---------- 写入微信 Silk 文件头 ---------- */
+  /* 写入微信 Silk 文件头 */
   fwrite(WECHAT_SILK_HEADER, 1, WECHAT_SILK_HEADER_LEN, fout);
 
-  /* ---------- 初始化 Silk 编码器 ---------- */
+  /* 初始化 Silk 编码器 */
   SKP_int32 encSize;
   SKP_Silk_SDK_Get_Encoder_Size(&encSize);
   void *psEnc = malloc(encSize);
   SKP_SILK_SDK_EncControlStruct encStatus;
   SKP_Silk_SDK_InitEncoder(psEnc, &encStatus);
 
-  /* ---------- 音频参数配置 (集中设置) ---------- */
+  /* 音频参数配置 (集中设置) */
   SKP_SILK_SDK_EncControlStruct encCtrl;
   memset(&encCtrl, 0, sizeof(encCtrl));
 
@@ -431,11 +577,11 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_wavToSilk(
   encCtrl.useDTX = SILK_USE_DTX;
   encCtrl.useInBandFEC = SILK_USE_IN_BAND_FEC;
 
-  /* ---------- PCM 缓冲区 ---------- */
+  /* PCM 缓冲区 */
   short *readBuf = (short *)malloc(frameSize * wav_channels * sizeof(short));
   short *monoBuf = (short *)malloc(frameSize * sizeof(short));
 
-  /* ---------- 编码循环 ---------- */
+  /* 编码循环 */
   while (drwav_read_pcm_frames_s16(&wav, frameSize, readBuf) ==
          (drwav_uint64)frameSize) {
     for (int i = 0; i < frameSize; i++) {
@@ -460,10 +606,10 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_wavToSilk(
     }
   }
 
-  /* ---------- 写入结束标记 ---------- */
+  /* 写入结束标记 */
   fwrite(SILK_TERMINATOR, 1, SILK_TERMINATOR_LEN, fout);
 
-  /* ---------- 资源释放 ---------- */
+  /* 资源释放 */
   free(readBuf);
   free(monoBuf);
   free(psEnc);
@@ -475,15 +621,15 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_wavToSilk(
   return 0;
 }
 
-/* =========================================================================
+/**
  * FLAC 转 Silk
- * ========================================================================= */
+ **/
 JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_flacToSilk(
     JNIEnv *env, jobject thiz, jstring flacPath, jstring silkPath, jint hz) {
   const char *in_p = env->GetStringUTFChars(flacPath, 0);
   const char *out_p = env->GetStringUTFChars(silkPath, 0);
 
-  /* ---------- 初始化 FLAC 解码器 ---------- */
+  /* 初始化 FLAC 解码器 */
   drflac *pFlac = drflac_open_file(in_p, NULL);
   if (!pFlac) {
     env->ReleaseStringUTFChars(flacPath, in_p);
@@ -491,7 +637,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_flacToSilk(
     return -601;
   }
 
-  /* ---------- 打开输出文件 ---------- */
+  /* 打开输出文件 */
   FILE *fout = fopen(out_p, "wb");
   if (!fout) {
     drflac_close(pFlac);
@@ -500,17 +646,17 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_flacToSilk(
     return -602;
   }
 
-  /* ---------- 写入微信 Silk 文件头 ---------- */
+  /* 写入微信 Silk 文件头 */
   fwrite(WECHAT_SILK_HEADER, 1, WECHAT_SILK_HEADER_LEN, fout);
 
-  /* ---------- 初始化 Silk 编码器 ---------- */
+  /* 初始化 Silk 编码器 */
   SKP_int32 encSize;
   SKP_Silk_SDK_Get_Encoder_Size(&encSize);
   void *psEnc = malloc(encSize);
   SKP_SILK_SDK_EncControlStruct encStatus;
   SKP_Silk_SDK_InitEncoder(psEnc, &encStatus);
 
-  /* ---------- 音频参数配置 (集中设置) ---------- */
+  /* 音频参数配置 (集中设置) */
   SKP_SILK_SDK_EncControlStruct encCtrl;
   memset(&encCtrl, 0, sizeof(encCtrl));
 
@@ -526,11 +672,11 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_flacToSilk(
   encCtrl.useDTX = SILK_USE_DTX;
   encCtrl.useInBandFEC = SILK_USE_IN_BAND_FEC;
 
-  /* ---------- PCM 缓冲区 ---------- */
+  /* PCM 缓冲区 */
   short *readBuf = (short *)malloc(frameSize * flac_channels * sizeof(short));
   short *monoBuf = (short *)malloc(frameSize * sizeof(short));
 
-  /* ---------- 编码循环 ---------- */
+  /* 编码循环 */
   while (drflac_read_pcm_frames_s16(pFlac, frameSize, readBuf) ==
          (drflac_uint64)frameSize) {
     for (int i = 0; i < frameSize; i++) {
@@ -555,10 +701,10 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_flacToSilk(
     }
   }
 
-  /* ---------- 写入结束标记 ---------- */
+  /* 写入结束标记 */
   fwrite(SILK_TERMINATOR, 1, SILK_TERMINATOR_LEN, fout);
 
-  /* ---------- 资源释放 ---------- */
+  /* 资源释放 */
   free(readBuf);
   free(monoBuf);
   free(psEnc);
@@ -570,15 +716,15 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_flacToSilk(
   return 0;
 }
 
-/* =========================================================================
+/**
  * OGG 转 Silk
- * ========================================================================= */
+ **/
 JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_oggToSilk(
     JNIEnv *env, jobject thiz, jstring oggPath, jstring silkPath, jint hz) {
   const char *in_p = env->GetStringUTFChars(oggPath, 0);
   const char *out_p = env->GetStringUTFChars(silkPath, 0);
 
-  /* ---------- 初始化 OGG 解码器 ---------- */
+  /* 初始化 OGG 解码器 */
   int error;
   stb_vorbis *v = stb_vorbis_open_filename(in_p, &error, NULL);
   if (!v) {
@@ -591,7 +737,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_oggToSilk(
   int ogg_sample_rate = info.sample_rate;
   int ogg_channels = info.channels;
 
-  /* ---------- 打开输出文件 ---------- */
+  /* 打开输出文件 */
   FILE *fout = fopen(out_p, "wb");
   if (!fout) {
     stb_vorbis_close(v);
@@ -601,17 +747,17 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_oggToSilk(
   }
   setvbuf(fout, NULL, _IOFBF, 65536);
 
-  /* ---------- 写入微信 Silk 文件头 ---------- */
+  /* 写入微信 Silk 文件头 */
   fwrite(WECHAT_SILK_HEADER, 1, WECHAT_SILK_HEADER_LEN, fout);
 
-  /* ---------- 初始化 Silk 编码器 ---------- */
+  /* 初始化 Silk 编码器 */
   SKP_int32 encSize;
   SKP_Silk_SDK_Get_Encoder_Size(&encSize);
   void *psEnc = malloc(encSize);
   SKP_SILK_SDK_EncControlStruct encStatus;
   SKP_Silk_SDK_InitEncoder(psEnc, &encStatus);
 
-  /* ---------- 音频参数配置 ---------- */
+  /* 音频参数配置 */
   SKP_SILK_SDK_EncControlStruct encCtrl;
   memset(&encCtrl, 0, sizeof(encCtrl));
 
@@ -626,13 +772,13 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_oggToSilk(
   encCtrl.useDTX = SILK_USE_DTX;
   encCtrl.useInBandFEC = SILK_USE_IN_BAND_FEC;
 
-  /* ---------- PCM 缓冲区 ---------- */
+  /* PCM 缓冲区 */
 #define OGG_READ_FRAMES 4096
   short *readBuf = (short *)malloc(OGG_READ_FRAMES * ogg_channels * sizeof(short));
   short *pcmBuffer = (short *)malloc(frameSize * 2 * sizeof(short));
   int pcmBufferLen = 0;
 
-  /* ---------- 编码循环 ---------- */
+  /* 编码循环 */
   while (1) {
     int n = stb_vorbis_get_samples_short_interleaved(v, ogg_channels, readBuf, OGG_READ_FRAMES * ogg_channels);
     if (n <= 0) break;
@@ -665,10 +811,10 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_oggToSilk(
     }
   }
 
-  /* ---------- 写入结束标记 ---------- */
+  /* 写入结束标记 */
   fwrite(SILK_TERMINATOR, 1, SILK_TERMINATOR_LEN, fout);
 
-  /* ---------- 资源释放 ---------- */
+  /* 资源释放 */
   free(readBuf);
   free(pcmBuffer);
   free(psEnc);
@@ -680,7 +826,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_oggToSilk(
   return 0;
 }
 
-/* =========================================================================
+/**
  * PCM 转 Silk
  * 
  * 参数说明:
@@ -693,7 +839,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_oggToSilk(
  * PCM 格式要求:
  *   - 16-bit 有符号整数 (little-endian)
  *   - 无文件头，原始 PCM 数据
- * ========================================================================= */
+ **/
 JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_pcmToSilk(
     JNIEnv *env, jobject thiz, jstring pcmPath, jstring silkPath, jint hz, jint pcmHz, jint channels) {
   const char *in_p = env->GetStringUTFChars(pcmPath, 0);
@@ -705,7 +851,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_pcmToSilk(
     return -701;
   }
 
-  /* ---------- 打开输入文件 ---------- */
+  /* 打开输入文件 */
   FILE *fin = fopen(in_p, "rb");
   if (!fin) {
     env->ReleaseStringUTFChars(pcmPath, in_p);
@@ -714,7 +860,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_pcmToSilk(
   }
   setvbuf(fin, NULL, _IOFBF, 65536);
 
-  /* ---------- 打开输出文件 ---------- */
+  /* 打开输出文件 */
   FILE *fout = fopen(out_p, "wb");
   if (!fout) {
     fclose(fin);
@@ -724,17 +870,17 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_pcmToSilk(
   }
   setvbuf(fout, NULL, _IOFBF, 65536);
 
-  /* ---------- 写入微信 Silk 文件头 ---------- */
+  /* 写入微信 Silk 文件头 */
   fwrite(WECHAT_SILK_HEADER, 1, WECHAT_SILK_HEADER_LEN, fout);
 
-  /* ---------- 初始化 Silk 编码器 ---------- */
+  /* 初始化 Silk 编码器 */
   SKP_int32 encSize;
   SKP_Silk_SDK_Get_Encoder_Size(&encSize);
   void *psEnc = malloc(encSize);
   SKP_SILK_SDK_EncControlStruct encStatus;
   SKP_Silk_SDK_InitEncoder(psEnc, &encStatus);
 
-  /* ---------- 音频参数配置 ---------- */
+  /* 音频参数配置 */
   SKP_SILK_SDK_EncControlStruct encCtrl;
   memset(&encCtrl, 0, sizeof(encCtrl));
 
@@ -764,13 +910,13 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_pcmToSilk(
   encCtrl.useDTX = SILK_USE_DTX;
   encCtrl.useInBandFEC = SILK_USE_IN_BAND_FEC;
 
-  /* ---------- PCM 缓冲区 ---------- */
+  /* PCM 缓冲区 */
 #define PCM_READ_FRAMES 4096
   short *readBuf = (short *)malloc(PCM_READ_FRAMES * channels * sizeof(short));
   short *pcmBuffer = (short *)malloc(frameSize * 10 * sizeof(short));
   int pcmBufferLen = 0;
 
-  /* ---------- 编码循环 ---------- */
+  /* 编码循环 */
   while (1) {
     int n = fread(readBuf, sizeof(short) * channels, PCM_READ_FRAMES, fin);
     if (n <= 0)
@@ -807,10 +953,10 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_pcmToSilk(
     }
   }
 
-  /* ---------- 写入结束标记 ---------- */
+  /* 写入结束标记 */
   fwrite(SILK_TERMINATOR, 1, SILK_TERMINATOR_LEN, fout);
 
-  /* ---------- 资源释放 ---------- */
+  /* 资源释放 */
   free(readBuf);
   free(pcmBuffer);
   free(psEnc);
@@ -822,15 +968,15 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_pcmToSilk(
   return 0;
 }
 
-/* =========================================================================
+/**
  * Silk 转 MP3
- * ========================================================================= */
+ **/
 JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_silkToMp3(
     JNIEnv *env, jobject thiz, jstring silkPath, jstring mp3Path, jint hz) {
   const char *in_p = env->GetStringUTFChars(silkPath, 0);
   const char *out_p = env->GetStringUTFChars(mp3Path, 0);
 
-  /* ---------- 打开输入文件 ---------- */
+  /* 打开输入文件 */
   FILE *fin = fopen(in_p, "rb");
   if (!fin) {
     env->ReleaseStringUTFChars(silkPath, in_p);
@@ -838,7 +984,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_silkToMp3(
     return -201;
   }
 
-  /* ---------- 打开输出文件 ---------- */
+  /* 打开输出文件 */
   FILE *fout = fopen(out_p, "wb");
   if (!fout) {
     fclose(fin);
@@ -850,7 +996,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_silkToMp3(
   setvbuf(fin, NULL, _IOFBF, 65536);
   setvbuf(fout, NULL, _IOFBF, 65536);
 
-  /* ---------- 解析 Silk 文件头 ---------- */
+  /* 解析 Silk 文件头 */
   char head_buf[16];
   int read_len = fread(head_buf, 1, 16, fin);
   int data_start = 0;
@@ -863,18 +1009,18 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_silkToMp3(
   }
   fseek(fin, data_start, SEEK_SET);
 
-  /* ---------- 初始化 Silk 解码器 ---------- */
+  /* 初始化 Silk 解码器 */
   SKP_int32 decSize;
   SKP_Silk_SDK_Get_Decoder_Size(&decSize);
   void *psDec = malloc(decSize);
   SKP_Silk_SDK_InitDecoder(psDec);
 
-  /* ---------- 解码参数配置 ---------- */
+  /* 解码参数配置 */
   SKP_SILK_SDK_DecControlStruct decCtrl;
   memset(&decCtrl, 0, sizeof(decCtrl));
   decCtrl.API_sampleRate = hz;
 
-  /* ---------- 初始化 LAME MP3 编码器 ---------- */
+  /* 初始化 LAME MP3 编码器 */
   lame_t lame = lame_init();
   lame_set_in_samplerate(lame, hz);
   lame_set_num_channels(lame, 1);
@@ -884,13 +1030,13 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_silkToMp3(
   lame_set_brate(lame, 24);
   lame_init_params(lame);
 
-  /* ---------- 缓冲区 ---------- */
+  /* 缓冲区 */
   SKP_int16 nBytesIn;
   SKP_uint8 inBuf[MAX_ARITHM_BYTES];
   SKP_int16 pcmBuf[MAX_API_FS_KHZ * FRAME_LENGTH_MS];
   unsigned char mp3Buf[8192];
 
-  /* ---------- 解码循环 ---------- */
+  /* 解码循环 */
   while (fread(&nBytesIn, 2, 1, fin) == 1) {
     if (nBytesIn <= 0 || nBytesIn > MAX_ARITHM_BYTES)
       break;
@@ -916,12 +1062,12 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_silkToMp3(
     }
   }
 
-  /* ---------- 刷新 LAME 缓冲区 ---------- */
+  /* 刷新 LAME 缓冲区 */
   int wrote = lame_encode_flush(lame, mp3Buf, 8192);
   if (wrote > 0)
     fwrite(mp3Buf, 1, wrote, fout);
 
-  /* ---------- 资源释放 ---------- */
+  /* 资源释放 */
   lame_close(lame);
   free(psDec);
   fclose(fin);
@@ -932,15 +1078,16 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_silkToMp3(
   return 0;
 }
 
-/* =========================================================================
+/**
  * 自动识别音频格式并转 Silk (统一入口)
- * 
- * 支持格式: MP3, WAV, FLAC, OGG, M4A, PCM
+ *
+ * 支持格式: MP3, WAV, FLAC, OGG, M4A, MP4, PCM
  * 返回值: 0=成功, 负数=错误码
- * 
+ *
  * 注意: PCM 格式需要指定采样率和声道数，请使用 pcmToSilk 方法
  *       此函数通过文件头自动检测输入格式，不依赖扩展名
- * ========================================================================= */
+ *       M4A/MP4 格式会自动调用 Java AacCodec 处理
+ **/
 JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_autoToSilk(
     JNIEnv *env, jobject thiz, jstring audioPath, jstring silkPath, jint hz) {
   const char *in_p = env->GetStringUTFChars(audioPath, 0);
@@ -966,7 +1113,10 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_autoToSilk(
       result = Java_me_yun_silk_SilkCodec_oggToSilk(env, thiz, audioPath, silkPath, hz);
       break;
     case FILE_TYPE_M4A:
-      result = -14;
+    case FILE_TYPE_MP4:
+      result = callAacCodecMethod(env, thiz, "mp4ToSilk",
+          "(Ljava/lang/String;Ljava/lang/String;Lme/yun/silk/SilkCodec;I)I",
+          in_p, out_p, hz);
       break;
     case FILE_TYPE_PCM:
       result = -3;
@@ -981,15 +1131,15 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_autoToSilk(
   return result;
 }
 
-/* =========================================================================
+/**
  * MP3 转 PCM
- * ========================================================================= */
+ **/
 JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_mp3ToPcm(
     JNIEnv *env, jobject thiz, jstring mp3Path, jstring pcmPath) {
   const char *in_p = env->GetStringUTFChars(mp3Path, 0);
   const char *out_p = env->GetStringUTFChars(pcmPath, 0);
 
-  /* ---------- 初始化 MP3 解码器 ---------- */
+  /* 初始化 MP3 解码器 */
   drmp3 mp3;
   if (!drmp3_init_file(&mp3, in_p, NULL)) {
     env->ReleaseStringUTFChars(mp3Path, in_p);
@@ -997,7 +1147,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_mp3ToPcm(
     return -301;
   }
 
-  /* ---------- 打开输出文件 ---------- */
+  /* 打开输出文件 */
   FILE *fout = fopen(out_p, "wb");
   if (!fout) {
     drmp3_uninit(&mp3);
@@ -1007,16 +1157,16 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_mp3ToPcm(
   }
   setvbuf(fout, NULL, _IOFBF, 65536);
 
-  /* ---------- 音频参数 ---------- */
+  /* 音频参数 */
   int mp3_channels = mp3.channels;
   int mp3_sample_rate = mp3.sampleRate;
 
-  /* ---------- PCM 缓冲区 ---------- */
+  /* PCM 缓冲区 */
   #define PCM_READ_FRAMES 4096
   drmp3_int16 pcm_buf[PCM_READ_FRAMES * 2];
   short mono_buf[PCM_READ_FRAMES];
 
-  /* ---------- 解码循环 ---------- */
+  /* 解码循环 */
   while (1) {
     int frames_read = drmp3_read_pcm_frames_s16(&mp3, PCM_READ_FRAMES, pcm_buf);
     if (frames_read <= 0) break;
@@ -1031,7 +1181,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_mp3ToPcm(
     }
   }
 
-  /* ---------- 资源释放 ---------- */
+  /* 资源释放 */
   drmp3_uninit(&mp3);
   fclose(fout);
 
@@ -1040,15 +1190,15 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_mp3ToPcm(
   return 0;
 }
 
-/* =========================================================================
+/**
  * WAV 转 PCM
- * ========================================================================= */
+ **/
 JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_wavToPcm(
     JNIEnv *env, jobject thiz, jstring wavPath, jstring pcmPath) {
   const char *in_p = env->GetStringUTFChars(wavPath, 0);
   const char *out_p = env->GetStringUTFChars(pcmPath, 0);
 
-  /* ---------- 初始化 WAV 解码器 ---------- */
+  /* 初始化 WAV 解码器 */
   drwav wav;
   if (!drwav_init_file(&wav, in_p, NULL)) {
     env->ReleaseStringUTFChars(wavPath, in_p);
@@ -1056,7 +1206,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_wavToPcm(
     return -501;
   }
 
-  /* ---------- 打开输出文件 ---------- */
+  /* 打开输出文件 */
   FILE *fout = fopen(out_p, "wb");
   if (!fout) {
     drwav_uninit(&wav);
@@ -1065,15 +1215,15 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_wavToPcm(
     return -502;
   }
 
-  /* ---------- 音频参数 ---------- */
+  /* 音频参数 */
   int wav_channels = wav.channels;
   int frame_size = 4096;
 
-  /* ---------- PCM 缓冲区 ---------- */
+  /* PCM 缓冲区 */
   short *read_buf = (short *)malloc(frame_size * wav_channels * sizeof(short));
   short *mono_buf = (short *)malloc(frame_size * sizeof(short));
 
-  /* ---------- 解码循环 ---------- */
+  /* 解码循环 */
   while (drwav_read_pcm_frames_s16(&wav, frame_size, read_buf) == (drwav_uint64)frame_size) {
     if (wav_channels == 2) {
       for (int i = 0; i < frame_size; i++) {
@@ -1085,7 +1235,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_wavToPcm(
     }
   }
 
-  /* ---------- 资源释放 ---------- */
+  /* 资源释放 */
   free(read_buf);
   free(mono_buf);
   drwav_uninit(&wav);
@@ -1096,15 +1246,15 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_wavToPcm(
   return 0;
 }
 
-/* =========================================================================
+/**
  * FLAC 转 PCM
- * ========================================================================= */
+ **/
 JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_flacToPcm(
     JNIEnv *env, jobject thiz, jstring flacPath, jstring pcmPath) {
   const char *in_p = env->GetStringUTFChars(flacPath, 0);
   const char *out_p = env->GetStringUTFChars(pcmPath, 0);
 
-  /* ---------- 初始化 FLAC 解码器 ---------- */
+  /* 初始化 FLAC 解码器 */
   drflac *pFlac = drflac_open_file(in_p, NULL);
   if (!pFlac) {
     env->ReleaseStringUTFChars(flacPath, in_p);
@@ -1112,7 +1262,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_flacToPcm(
     return -601;
   }
 
-  /* ---------- 打开输出文件 ---------- */
+  /* 打开输出文件 */
   FILE *fout = fopen(out_p, "wb");
   if (!fout) {
     drflac_close(pFlac);
@@ -1121,15 +1271,15 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_flacToPcm(
     return -602;
   }
 
-  /* ---------- 音频参数 ---------- */
+  /* 音频参数 */
   int flac_channels = pFlac->channels;
   int frame_size = 4096;
 
-  /* ---------- PCM 缓冲区 ---------- */
+  /* PCM 缓冲区 */
   short *read_buf = (short *)malloc(frame_size * flac_channels * sizeof(short));
   short *mono_buf = (short *)malloc(frame_size * sizeof(short));
 
-  /* ---------- 解码循环 ---------- */
+  /* 解码循环 */
   while (drflac_read_pcm_frames_s16(pFlac, frame_size, read_buf) == (drflac_uint64)frame_size) {
     if (flac_channels == 2) {
       for (int i = 0; i < frame_size; i++) {
@@ -1141,7 +1291,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_flacToPcm(
     }
   }
 
-  /* ---------- 资源释放 ---------- */
+  /* 资源释放 */
   free(read_buf);
   free(mono_buf);
   drflac_close(pFlac);
@@ -1152,15 +1302,15 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_flacToPcm(
   return 0;
 }
 
-/* =========================================================================
+/**
  * OGG 转 PCM
- * ========================================================================= */
+ **/
 JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_oggToPcm(
     JNIEnv *env, jobject thiz, jstring oggPath, jstring pcmPath) {
   const char *in_p = env->GetStringUTFChars(oggPath, 0);
   const char *out_p = env->GetStringUTFChars(pcmPath, 0);
 
-  /* ---------- 初始化 OGG 解码器 ---------- */
+  /* 初始化 OGG 解码器 */
   int error;
   stb_vorbis *v = stb_vorbis_open_filename(in_p, &error, NULL);
   if (!v) {
@@ -1169,7 +1319,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_oggToPcm(
     return -401;
   }
 
-  /* ---------- 打开输出文件 ---------- */
+  /* 打开输出文件 */
   FILE *fout = fopen(out_p, "wb");
   if (!fout) {
     stb_vorbis_close(v);
@@ -1178,18 +1328,18 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_oggToPcm(
     return -402;
   }
 
-  /* ---------- 音频参数 ---------- */
+  /* 音频参数 */
   int frame_size = 4096;
   short *pcm_buf = (short *)malloc(frame_size * sizeof(short));
 
-  /* ---------- 解码循环 ---------- */
+  /* 解码循环 */
   while (1) {
     int n = stb_vorbis_get_samples_short_interleaved(v, 1, pcm_buf, frame_size);
     if (n <= 0) break;
     fwrite(pcm_buf, sizeof(short), n, fout);
   }
 
-  /* ---------- 资源释放 ---------- */
+  /* 资源释放 */
   free(pcm_buf);
   stb_vorbis_close(v);
   fclose(fout);
@@ -1199,11 +1349,11 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_oggToPcm(
   return 0;
 }
 
-/* =========================================================================
+/**
  * 辅助函数：获取 Silk 文件时长 (秒)
  * 
  * Silk 文件没有时长头，需要通过遍历所有数据帧来计算
- * ========================================================================= */
+ **/
 static double getSilkDuration(const char *path) {
     FILE *fin = fopen(path, "rb");
     if (!fin) return 0.0;
@@ -1241,9 +1391,9 @@ static double getSilkDuration(const char *path) {
     return frameCount * 0.020; // 每帧 20ms
 }
 
-/* =========================================================================
+/**
  * 辅助函数：获取 Silk 文件时长 (毫秒)
- * ========================================================================= */
+ **/
 static long long getSilkDurationMs(const char *path) {
     FILE *fin = fopen(path, "rb");
     if (!fin) return 0;
@@ -1281,11 +1431,11 @@ static long long getSilkDurationMs(const char *path) {
     return totalMs;
 }
 
-/* =========================================================================
+/**
  * 获取音频时长 (单位：毫秒)
  * 
  * 返回值: long (1秒 = 1000)
- * ========================================================================= */
+ **/
 JNIEXPORT jlong JNICALL Java_me_yun_silk_SilkCodec_getDuration(
     JNIEnv *env, jobject thiz, jstring filePath) {
     const char *path = env->GetStringUTFChars(filePath, 0);
@@ -1345,15 +1495,16 @@ JNIEXPORT jlong JNICALL Java_me_yun_silk_SilkCodec_getDuration(
     return durationMs;
 }
 
-/* =========================================================================
+/**
  * 自动识别音频格式并转 PCM (统一入口)
- * 
- * 支持格式: MP3, WAV, FLAC, OGG, PCM
+ *
+ * 支持格式: MP3, WAV, FLAC, OGG, M4A, MP4, PCM
  * 输出: 单声道 16-bit PCM
  * 返回值: 0=成功, 负数=错误码
- * 
+ *
  * 注意: 此函数通过文件头自动检测输入格式，不依赖扩展名
- * ========================================================================= */
+ *       M4A/MP4 格式会自动调用 Java AacCodec 处理
+ **/
 JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_autoToPcm(
     JNIEnv *env, jobject thiz, jstring audioPath, jstring pcmPath) {
   const char *in_p = env->GetStringUTFChars(audioPath, 0);
@@ -1379,7 +1530,10 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_autoToPcm(
       result = Java_me_yun_silk_SilkCodec_oggToPcm(env, thiz, audioPath, pcmPath);
       break;
     case FILE_TYPE_M4A:
-      result = -14;
+    case FILE_TYPE_MP4:
+      result = callAacCodecMethod(env, thiz, "mp4ToPcm",
+          "(Ljava/lang/String;Ljava/lang/String;)I",
+          in_p, out_p, 0);
       break;
     case FILE_TYPE_PCM:
       result = -4;

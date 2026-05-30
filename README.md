@@ -7,7 +7,7 @@
 [![Download](https://img.shields.io/badge/Download-JitPack-blueviolet.svg)](https://jitpack.io)
 [![JitPack](https://jitpack.io/v/YunJavaPro/Silk-Codec-Android.svg)](https://jitpack.io/#YunJavaPro/Silk-Codec-Android)
 
-> 轻量级 Android 音频编解码库，基于 Silk SDK / dr_libs / stb_vorbis / lame 实现底层解码，JNI 封装，最高支持 48000Hz 采样率。
+> 轻量级 Android 音频编解码库，基于 Silk SDK / dr_libs / stb_vorbis / lame / android_media 实现底层解码，JNI 封装，最高支持 48000Hz 采样率。
 
 ---
 
@@ -27,7 +27,7 @@
 
 | 输入 | 输出 |
 |------|------|
-| mp3 / wav / flac / ogg / silk / amr / pcm | silk / mp3 / pcm |
+| mp3 / wav / flac / ogg / silk / amr / pcm | silk / mp3 / pcm | m4a | mp4
 
 **采样率：** 8000 / 12000 / 16000 / 24000 / 32000 / 44100 / 48000 Hz
 
@@ -49,7 +49,7 @@ codec.autoToPcm("/sdcard/input.wav", "/sdcard/output.pcm");
 
 // 获取文件类型
 int type = codec.getFileType("/sdcard/somefile");
-// 返回：0=未知 1=Silk 2=MP3 3=WAV 4=FLAC 5=OGG 6=PCM 7=M4A 8=AAC
+// 返回：0=未知 1=Silk 2=MP3 3=WAV 4=FLAC 5=OGG 6=PCM 7=M4A 8=MP4
 
 // 获取音频时长（毫秒）
 long duration = codec.getDuration("/sdcard/somefile");
@@ -85,6 +85,20 @@ long duration = codec.getDuration("/sdcard/somefile");
 | -701 | PCM 参数错误 |
 | -702 | PCM 文件错误 |
 | -703 | PCM 参数错误 |
+| -801 | AAC/M4A 解码错误 (文件不存在) |
+| -802 | AAC/M4A 解码错误 (未找到音频轨道) |
+| -803 | AAC/M4A 解码错误 (格式不支持) |
+| -901 | AAC 编码错误 (PCM 文件不存在) |
+| -902 | AAC 编码错误 (编码异常) |
+| -911 | M4A 编码错误 (PCM 文件不存在) |
+| -912 | M4A 编码错误 (Muxer 失败) |
+| -1001 ~ -1009 | Silk 转 AAC/M4A 错误 |
+| -1011 ~ -1012 | MP3 转 AAC/M4A 错误 |
+| -1021 ~ -1022 | WAV 转 AAC/M4A 错误 |
+| -1031 ~ -1039 | M4A/AAC 转 Silk 错误 |
+| -1051 ~ -1059 | M4A/AAC 转 AAC 错误 |
+| -1061 ~ -1069 | M4A/AAC 转 M4A 错误 |
+| -2000 | M4A/AAC 转 Silk 错误 (解码失败) |
 
 ---
 

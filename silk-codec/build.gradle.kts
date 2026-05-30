@@ -43,7 +43,7 @@ publishing {
         create<MavenPublication>("release") {
             groupId = "com.github.YunJavaPro"
             artifactId = "silk-codec"
-            version = "1.0.0"
+            version = "1.0.1"
             afterEvaluate {
                 from(components["release"])
             }

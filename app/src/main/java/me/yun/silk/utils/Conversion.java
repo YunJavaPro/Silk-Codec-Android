@@ -1,11 +1,13 @@
 package me.yun.silk.utils;
 
 import me.yun.silk.SilkCodec;
+import me.yun.silk.AacCodec;
 
 public class Conversion {
 
     public interface ConversionCallback {
         void onMessage(String msg);
+        default void onProgress(int progress) {}
     }
 
     public static void startTransform(SilkCodec codec, int type, String inputPath, String outputPath, int sampleRate, ConversionCallback callback) {
@@ -20,6 +22,9 @@ public class Conversion {
                     case 1: result = codec.mp3ToSilk(inputPath, outputPath, sampleRate); break;
                     case 5: result = codec.autoToSilk(inputPath, outputPath, sampleRate); break;
                     case 6: result = codec.autoToPcm(inputPath, outputPath); break;
+                    case 7: result = AacCodec.autoToAac(inputPath, outputPath, codec, sampleRate); break;
+                    case 8: result = AacCodec.autoToM4a(inputPath, outputPath, codec, sampleRate); break;
+                    case 9: result = AacCodec.m4aToSilk(inputPath, outputPath, codec, sampleRate); break;
                 }
 
                 if (result == 0) {
@@ -31,6 +36,46 @@ public class Conversion {
                 callback.onMessage("异常: " + e.getMessage());
             }
         }).start();
+    }
+
+    public static int silkToAac(SilkCodec codec, String silkPath, String aacPath, int hz) {
+        return AacCodec.silkToAac(silkPath, aacPath, codec, hz);
+    }
+
+    public static int silkToM4a(SilkCodec codec, String silkPath, String m4aPath, int hz) {
+        return AacCodec.silkToM4a(silkPath, m4aPath, codec, hz);
+    }
+
+    public static int mp3ToAac(String mp3Path, String aacPath, int sampleRate) {
+        return AacCodec.mp3ToAac(mp3Path, aacPath, sampleRate);
+    }
+
+    public static int mp3ToM4a(String mp3Path, String m4aPath, int sampleRate) {
+        return AacCodec.mp3ToM4a(mp3Path, m4aPath, sampleRate);
+    }
+
+    public static int wavToAac(String wavPath, String aacPath, int sampleRate) {
+        return AacCodec.wavToAac(wavPath, aacPath, sampleRate);
+    }
+
+    public static int wavToM4a(String wavPath, String m4aPath, int sampleRate) {
+        return AacCodec.wavToM4a(wavPath, m4aPath, sampleRate);
+    }
+
+    public static int m4aToSilk(SilkCodec codec, String m4aPath, String silkPath, int hz) {
+        return AacCodec.m4aToSilk(m4aPath, silkPath, codec, hz);
+    }
+
+    public static int m4aToPcm(String m4aPath, String pcmPath) {
+        return AacCodec.m4aToPcm(m4aPath, pcmPath);
+    }
+
+    public static int pcmToAac(String pcmPath, String aacPath, int sampleRate, int channels) {
+        return AacCodec.pcmToAac(pcmPath, aacPath, sampleRate, channels);
+    }
+
+    public static int pcmToM4a(String pcmPath, String m4aPath, int sampleRate, int channels) {
+        return AacCodec.pcmToM4a(pcmPath, m4aPath, sampleRate, channels);
     }
 
     private static String getFileTypeName(int type) {
@@ -66,6 +111,16 @@ public class Conversion {
             case -501: case -502: return "错误码:" + code + " → WAV 解码错误";
             case -601: case -602: return "错误码:" + code + " → FLAC 解码错误";
             case -701: case -702: case -703: return "错误码:" + code + " → PCM 参数错误";
+            case -801: case -802: return "错误码:" + code + " → AAC/M4A 解码错误 (文件读取失败)";
+            case -803: return "错误码:-803 → AAC/M4A 解码错误 (格式不支持)";
+            case -901: case -902: return "错误码:" + code + " → AAC/M4A 编码错误";
+            case -911: case -912: return "错误码:" + code + " → M4A 编码错误";
+            case -1001: return "错误码:-1001 → Silk 转 AAC/M4A 错误";
+            case -1011: case -1012: return "错误码:" + code + " → MP3 转 AAC/M4A 错误";
+            case -1021: case -1022: return "错误码:" + code + " → WAV 转 AAC/M4A 错误";
+            case -1031: return "错误码:-1031 → AAC/M4A 转 Silk 错误";
+            case -1041: return "错误码:-1041 → 中间转换错误";
+            case -2000: return "错误码:-2000 → M4A/AAC 转 Silk 错误 (解码失败)";
             default: return "错误码:" + code + " → 未知错误";
         }
     }
