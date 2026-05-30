@@ -2,9 +2,6 @@ package me.yun.silk;
 
 public class SilkCodec {
 
-    /** 时长限制：60秒 */
-    public static final long MAX_DURATION_MS = 60_000L;
-
     static {
         System.loadLibrary("silk");
     }
@@ -93,6 +90,18 @@ public class SilkCodec {
      */
     public native int silkToMp3(String silkPath, String mp3Path, int hz);
 
+    // ==================== Silk 转 PCM ====================
+
+    /**
+     * Silk 转 PCM
+     *
+     * @param silkPath 输入 Silk 文件路径
+     * @param pcmPath 输出 PCM 文件路径
+     * @param hz 输出 PCM 采样率
+     * @return 0=成功, 负数=错误码
+     */
+    public native int silkToPcm(String silkPath, String pcmPath, int hz);
+
     // ==================== 转 PCM ====================
 
     /**
@@ -149,13 +158,17 @@ public class SilkCodec {
     public native long getDuration(String filePath);
 
     /**
-     * 获取限制后的音频时长（毫秒）。若超过 {@link #MAX_DURATION_MS} 则截断。
+     * 获取限制后的音频时长（毫秒） 如果时长超过 60 秒，则强制返回 60000 毫秒
      *
      * @param filePath 音频文件路径
-     * @return 时长（毫秒），最高 {@value #MAX_DURATION_MS}
+     * @return 时长（毫秒），最高 60000
      */
-    public long getDurationLimited(String filePath) {
+    public long getDurations(String filePath) {
         long duration = getDuration(filePath);
-        return duration > MAX_DURATION_MS ? MAX_DURATION_MS : duration;
+        // 60秒 = 60 * 1000 毫秒
+        if (duration > 60000) {
+            return 60000;
+        }
+        return duration;
     }
 }

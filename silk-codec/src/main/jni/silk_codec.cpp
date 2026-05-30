@@ -1079,6 +1079,99 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_silkToMp3(
 }
 
 /**
+ *
+ * 参数: silkPath - 输入 Silk 文件路径
+ *       pcmPath - 输出 PCM 文件路径
+ *       hz - 输出 PCM 采样率
+ *
+ * 返回值: 0=成功, 负数=错误码
+ **/
+JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_silkToPcm(
+    JNIEnv *env, jobject thiz, jstring silkPath, jstring pcmPath, jint hz) {
+  const char *in_p = env->GetStringUTFChars(silkPath, 0);
+  const char *out_p = env->GetStringUTFChars(pcmPath, 0);
+
+  /* 打开输入文件 */
+  FILE *fin = fopen(in_p, "rb");
+  if (!fin) {
+    env->ReleaseStringUTFChars(silkPath, in_p);
+    env->ReleaseStringUTFChars(pcmPath, out_p);
+    return -201;
+  }
+
+  /* 打开输出文件 */
+  FILE *fout = fopen(out_p, "wb");
+  if (!fout) {
+    fclose(fin);
+    env->ReleaseStringUTFChars(silkPath, in_p);
+    env->ReleaseStringUTFChars(pcmPath, out_p);
+    return -202;
+  }
+
+  setvbuf(fin, NULL, _IOFBF, 65536);
+  setvbuf(fout, NULL, _IOFBF, 65536);
+
+  /* 解析 Silk 文件头 */
+  char head_buf[16];
+  int read_len = fread(head_buf, 1, 16, fin);
+  int data_start = 0;
+
+  for (int i = 0; i <= read_len - 9; i++) {
+    if (memcmp(head_buf + i, "#!SILK_V3", 9) == 0) {
+      data_start = i + 9;
+      break;
+    }
+  }
+  fseek(fin, data_start, SEEK_SET);
+
+  /* 初始化 Silk 解码器 */
+  SKP_int32 decSize;
+  SKP_Silk_SDK_Get_Decoder_Size(&decSize);
+  void *psDec = malloc(decSize);
+  SKP_Silk_SDK_InitDecoder(psDec);
+
+  /* 解码参数配置 */
+  SKP_SILK_SDK_DecControlStruct decCtrl;
+  memset(&decCtrl, 0, sizeof(decCtrl));
+  decCtrl.API_sampleRate = hz;
+
+  /* 缓冲区 */
+  SKP_int16 nBytesIn;
+  SKP_uint8 inBuf[MAX_ARITHM_BYTES];
+  SKP_int16 pcmBuf[MAX_API_FS_KHZ * FRAME_LENGTH_MS];
+
+  /* 解码循环 */
+  while (fread(&nBytesIn, 2, 1, fin) == 1) {
+    if (nBytesIn <= 0 || nBytesIn > MAX_ARITHM_BYTES)
+      break;
+    fread(inBuf, 1, nBytesIn, fin);
+
+    SKP_int16 nSamplesOut;
+    if (SKP_Silk_SDK_Decode(psDec, &decCtrl, 0, inBuf, (SKP_int)nBytesIn,
+                            pcmBuf, &nSamplesOut) == 0) {
+      /* 直接写入 PCM 数据 (16-bit little endian) */
+      fwrite(pcmBuf, 2, nSamplesOut, fout);
+    }
+
+    while (decCtrl.moreInternalDecoderFrames) {
+      if (SKP_Silk_SDK_Decode(psDec, &decCtrl, 0, NULL, 0, pcmBuf,
+                              &nSamplesOut) == 0) {
+        fwrite(pcmBuf, 2, nSamplesOut, fout);
+      }
+    }
+  }
+
+  /* 资源释放 */
+  free(psDec);
+  fclose(fin);
+  fclose(fout);
+
+  env->ReleaseStringUTFChars(silkPath, in_p);
+  env->ReleaseStringUTFChars(pcmPath, out_p);
+  return 0;
+}
+
+/**
  * 自动识别音频格式并转 Silk (统一入口)
  *
  * 支持格式: MP3, WAV, FLAC, OGG, M4A, MP4, PCM
