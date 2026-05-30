@@ -2,6 +2,9 @@ package me.yun.silk;
 
 public class SilkCodec {
 
+    /** 时长限制：60秒 */
+    public static final long MAX_DURATION_MS = 60_000L;
+
     static {
         System.loadLibrary("silk");
     }
@@ -10,7 +13,7 @@ public class SilkCodec {
      * 获取文件实际类型（通过文件头检测）
      *
      * @param filePath 文件路径
-     * @return 文件类型常量 0 = 未知类型 1 = Silk 2 = MP3 3 = WAV 4 = FLAC 5 = OGG 6 = PCM 7 = M4A 8 = AAC
+     * @return 文件类型常量 0 = 未知类型 1 = Silk 2 = MP3 3 = WAV 4 = FLAC 5 = OGG 6 = PCM 7 = M4A 8 = MP4
      */
     public native int getFileType(String filePath);
 
@@ -21,7 +24,7 @@ public class SilkCodec {
      *
      * @param mp3Path 输入 MP3 文件路径
      * @param silkPath 输出 Silk 文件路径
-     * @param hz Silk 编码内部采样率 (8000/12000/16000/24000/32000/44100/48000)
+     * @param hz Silk 编码内部采样率
      * @return 0=成功, 负数=错误码
      */
     public native int mp3ToSilk(String mp3Path, String silkPath, int hz);
@@ -61,7 +64,7 @@ public class SilkCodec {
      *
      * @param pcmPath 输入 PCM 文件路径
      * @param silkPath 输出 Silk 文件路径
-     * @param hz Silk 编码内部采样率 (8000/12000/16000/24000/32000/44100/48000)
+     * @param hz Silk 编码内部采样率
      * @param pcmHz 输入 PCM 文件采样率
      * @param channels 输入 PCM 文件声道数 (1=单声道, 2=立体声)
      * @return 0=成功, 负数=错误码
@@ -69,7 +72,7 @@ public class SilkCodec {
     public native int pcmToSilk(String pcmPath, String silkPath, int hz, int pcmHz, int channels);
 
     /**
-     * 自动识别音频格式并转 Silk 支持格式: MP3, WAV, FLAC, OGG, M4A, AAC, AMR
+     * 自动识别音频格式并转 Silk 支持格式: MP3, WAV, FLAC, OGG, M4A, MP4
      *
      * @param audioPath 输入音频文件路径
      * @param silkPath 输出 Silk 文件路径
@@ -90,7 +93,7 @@ public class SilkCodec {
      */
     public native int silkToMp3(String silkPath, String mp3Path, int hz);
 
-    // ==================== Silk 转 PCM ====================
+    // ==================== 转 PCM ====================
 
     /**
      * Silk 转 PCM
@@ -101,8 +104,6 @@ public class SilkCodec {
      * @return 0=成功, 负数=错误码
      */
     public native int silkToPcm(String silkPath, String pcmPath, int hz);
-
-    // ==================== 转 PCM ====================
 
     /**
      * MP3 转 PCM
@@ -158,17 +159,13 @@ public class SilkCodec {
     public native long getDuration(String filePath);
 
     /**
-     * 获取限制后的音频时长（毫秒） 如果时长超过 60 秒，则强制返回 60000 毫秒
+     * 获取限制后的音频时长（毫秒）。若超过 {@link #MAX_DURATION_MS} 则截断。
      *
      * @param filePath 音频文件路径
-     * @return 时长（毫秒），最高 60000
+     * @return 时长（毫秒），最高 {@value #MAX_DURATION_MS}
      */
-    public long getDurations(String filePath) {
+    public long getDurationLimited(String filePath) {
         long duration = getDuration(filePath);
-        // 60秒 = 60 * 1000 毫秒
-        if (duration > 60000) {
-            return 60000;
-        }
-        return duration;
+        return duration > MAX_DURATION_MS ? MAX_DURATION_MS : duration;
     }
 }
