@@ -17,8 +17,6 @@ public class SilkCodec {
      */
     public native int getFileType(String filePath);
 
-    // ==================== 转 Silk ====================
-
     /**
      * MP3 转 Silk
      *
@@ -72,7 +70,7 @@ public class SilkCodec {
     public native int pcmToSilk(String pcmPath, String silkPath, int hz, int pcmHz, int channels);
 
     /**
-     * 自动识别音频格式并转 Silk 支持格式: MP3, WAV, FLAC, OGG, M4A, MP4
+     * 自动识别音频格式并转 Silk
      *
      * @param audioPath 输入音频文件路径
      * @param silkPath 输出 Silk 文件路径
@@ -80,8 +78,6 @@ public class SilkCodec {
      * @return 0=成功, 负数=错误码
      */
     public native int autoToSilk(String audioPath, String silkPath, int hz);
-
-    // ==================== Silk 转 MP3 ====================
 
     /**
      * Silk 转 MP3
@@ -93,7 +89,6 @@ public class SilkCodec {
      */
     public native int silkToMp3(String silkPath, String mp3Path, int hz);
 
-    // ==================== 转 PCM ====================
 
     /**
      * Silk 转 PCM
@@ -142,7 +137,7 @@ public class SilkCodec {
     public native int oggToPcm(String oggPath, String pcmPath);
 
     /**
-     * 自动识别音频格式并转 PCM 支持格式: MP3, WAV, FLAC, OGG, M4A, AAC, AMR
+     * 自动识别音频格式并转 PCM
      *
      * @param audioPath 输入音频文件路径
      * @param pcmPath 输出 PCM 文件路径

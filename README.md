@@ -67,7 +67,6 @@ long duration = codec.getDuration("/sdcard/somefile");
 | -3 | PCM 转 Silk 需要额外参数 |
 | -4 | 输入已经是 PCM 格式 |
 | -5 | 输入已经是 Silk 格式 |
-| -6 | Silk 转 PCM 请使用 silkToMp3 |
 | -10 | 输出必须是 .silk 或 .slk |
 | -11 | 输出必须是 .mp3 |
 | -12 | 输出必须是 .pcm 或 .raw |

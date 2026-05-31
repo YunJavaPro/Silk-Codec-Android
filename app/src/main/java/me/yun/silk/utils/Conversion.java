@@ -71,7 +71,7 @@ public class Conversion {
             case 5: return "OGG";
             case 6: return "PCM";
             case 7: return "M4A";
-            case 8: return "AAC";
+            case 8: return "MP4";
             default: return "未知";
         }
     }
@@ -84,7 +84,6 @@ public class Conversion {
             case -3: return "错误码:-3 → PCM 转 Silk 需要额外参数";
             case -4: return "错误码:-4 → 输入已经是 PCM 格式";
             case -5: return "错误码:-5 → 输入已经是 Silk 格式";
-            case -6: return "错误码:-6 → Silk 转 PCM 请使用 silkToMp3";
             case -10: return "错误码:-10 → 输出必须是 .silk 或 .slk";
             case -11: return "错误码:-11 → 输出必须是 .mp3";
             case -12: return "错误码:-12 → 输出必须是 .pcm 或 .raw";

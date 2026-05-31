@@ -2,7 +2,6 @@
  * Silk Codec JNI 接口
  *
  * 功能：多种音频格式与 Silk 格式互转
- * 支持：MP3/WAV/FLAC/OGG <-> Silk
  *
  * 注意：输出的 Silk 文件包含微信专属头 (0x02 + #!SILK_V3)
  */
@@ -250,16 +249,6 @@ static int isMp4Brand(const unsigned char *brand) {
     if (memcmp(brand, "iso6", 4) == 0) return 1;
     return 0;
 }
-
-/**
- * detectMp4Type - 检测 MP4/M4A 容器类型
- *
- * 读取 MP4 文件的 ftyp box，检查品牌标识确定类型
- *
- * @param path 文件路径
- * @return     1=M4A, 2=MP4, 0=未知
- */
-
 
 /**
  * detectFileType - 通过文件头检测文件实际类型
@@ -1629,7 +1618,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_autoToPcm(
 
   switch (inputType) {
     case FILE_TYPE_SILK:
-      result = -6;
+      result = Java_me_yun_silk_SilkCodec_silkToPcm(env, thiz, audioPath, pcmPath, 24000);
       break;
     case FILE_TYPE_MP3:
       result = Java_me_yun_silk_SilkCodec_mp3ToPcm(env, thiz, audioPath, pcmPath);

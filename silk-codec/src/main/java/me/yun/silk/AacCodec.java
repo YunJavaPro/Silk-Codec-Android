@@ -5,10 +5,12 @@ import android.media.MediaCodecInfo;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
 import android.media.MediaMuxer;
+import android.media.MediaMetadataRetriever;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
 
 public class AacCodec {
 
@@ -98,8 +100,8 @@ public class AacCodec {
             codec.start();
 
             FileOutputStream fos = new FileOutputStream(pcmPath);
-            java.nio.ByteBuffer[] inputBuffers = codec.getInputBuffers();
-            java.nio.ByteBuffer[] outputBuffers = codec.getOutputBuffers();
+            ByteBuffer[] inputBuffers = codec.getInputBuffers();
+            ByteBuffer[] outputBuffers = codec.getOutputBuffers();
 
             MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
             boolean sawInputEOS = false;
@@ -109,7 +111,7 @@ public class AacCodec {
                 if (!sawInputEOS) {
                     int inputBufferIndex = codec.dequeueInputBuffer(TIMEOUT_US);
                     if (inputBufferIndex >= 0) {
-                        java.nio.ByteBuffer inputBuffer = inputBuffers[inputBufferIndex];
+                        ByteBuffer inputBuffer = inputBuffers[inputBufferIndex];
                         int sampleSize = extractor.readSampleData(inputBuffer, 0);
                         if (sampleSize < 0) {
                             codec.queueInputBuffer(inputBufferIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
@@ -125,7 +127,7 @@ public class AacCodec {
                 if (outputBufferIndex >= 0) {
                     if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) sawOutputEOS = true;
                     if (bufferInfo.size > 0) {
-                        java.nio.ByteBuffer outputBuffer = outputBuffers[outputBufferIndex];
+                        ByteBuffer outputBuffer = outputBuffers[outputBufferIndex];
                         outputBuffer.position(bufferInfo.offset);
                         outputBuffer.limit(bufferInfo.offset + bufferInfo.size);
                         
@@ -186,8 +188,8 @@ public class AacCodec {
 
             RandomAccessFile raf = new RandomAccessFile(pcmPath, "r");
             FileOutputStream fos = new FileOutputStream(aacPath);
-            java.nio.ByteBuffer[] inputBuffers = codec.getInputBuffers();
-            java.nio.ByteBuffer[] outputBuffers = codec.getOutputBuffers();
+            ByteBuffer[] inputBuffers = codec.getInputBuffers();
+            ByteBuffer[] outputBuffers = codec.getOutputBuffers();
 
             MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
             boolean sawInputEOS = false;
@@ -199,7 +201,7 @@ public class AacCodec {
                 if (!sawInputEOS) {
                     int inputBufferIndex = codec.dequeueInputBuffer(TIMEOUT_US);
                     if (inputBufferIndex >= 0) {
-                        java.nio.ByteBuffer inputBuffer = inputBuffers[inputBufferIndex];
+                        ByteBuffer inputBuffer = inputBuffers[inputBufferIndex];
                         inputBuffer.clear();
                         
                         byte[] pcmChunk = new byte[Math.min(4096, (int)(fileSize - raf.getFilePointer()))];
@@ -227,7 +229,7 @@ public class AacCodec {
                     if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) sawOutputEOS = true;
                     
                     if (bufferInfo.size > 0) {
-                        java.nio.ByteBuffer outputBuffer = outputBuffers[outputBufferIndex];
+                        ByteBuffer outputBuffer = outputBuffers[outputBufferIndex];
                         byte[] aacFrame = new byte[bufferInfo.size];
                         outputBuffer.get(aacFrame);
                         
@@ -283,8 +285,8 @@ public class AacCodec {
             boolean muxerStarted = false;
 
             RandomAccessFile raf = new RandomAccessFile(pcmPath, "r");
-            java.nio.ByteBuffer[] inputBuffers = codec.getInputBuffers();
-            java.nio.ByteBuffer[] outputBuffers = codec.getOutputBuffers();
+            ByteBuffer[] inputBuffers = codec.getInputBuffers();
+            ByteBuffer[] outputBuffers = codec.getOutputBuffers();
 
             MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
             boolean sawInputEOS = false;
@@ -297,7 +299,7 @@ public class AacCodec {
                 if (!sawInputEOS) {
                     int inputBufferIndex = codec.dequeueInputBuffer(TIMEOUT_US);
                     if (inputBufferIndex >= 0) {
-                        java.nio.ByteBuffer inputBuffer = inputBuffers[inputBufferIndex];
+                        ByteBuffer inputBuffer = inputBuffers[inputBufferIndex];
                         inputBuffer.clear();
                         
                         byte[] pcmChunk = new byte[Math.min(frameSize, (int)(fileSize - raf.getFilePointer()))];
@@ -331,7 +333,7 @@ public class AacCodec {
                             muxerStarted = true;
                         }
                         
-                        java.nio.ByteBuffer outputBuffer = outputBuffers[outputBufferIndex];
+                        ByteBuffer outputBuffer = outputBuffers[outputBufferIndex];
                         muxer.writeSampleData(trackIndex, outputBuffer, bufferInfo);
                     }
                     
@@ -597,12 +599,12 @@ public class AacCodec {
     }
 
     public static long getDuration(String filePath) {
-        android.media.MediaMetadataRetriever retriever = null;
+        MediaMetadataRetriever retriever = null;
         try {
-            retriever = new android.media.MediaMetadataRetriever();
+            retriever = new MediaMetadataRetriever();
             retriever.setDataSource(filePath);
             String durationStr = retriever.extractMetadata(
-                android.media.MediaMetadataRetriever.METADATA_KEY_DURATION);
+                MediaMetadataRetriever.METADATA_KEY_DURATION);
             if (durationStr != null) {
                 return Long.parseLong(durationStr);
             }
