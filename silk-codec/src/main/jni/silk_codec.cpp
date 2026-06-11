@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <malloc.h>
 
 /* ==================== Silk SDK 接口 ==================== */
 #include "silk/interface/SKP_Silk_SDK_API.h"
@@ -132,6 +133,36 @@
  * 对于文件转换场景（无丢包），建议禁用 FEC。
  */
 #define SILK_USE_IN_BAND_FEC 0
+
+/* ==================== 16KB 内存对齐 ==================== */
+/**
+ * 16KB 对齐常量
+ * 用于 ARM 缓存行优化和 SIMD 指令对齐需求
+ */
+#define ALIGN_16K (16 * 1024)
+
+/**
+ * 16KB 对齐的内存分配
+ * 使用 posix_memalign 确保 16KB 对齐
+ *
+ * @param size 需要分配的字节数
+ * @return 对齐后的内存指针，失败返回 NULL
+ */
+static void* aligned_malloc_16k(size_t size) {
+    void* ptr = NULL;
+    if (posix_memalign(&ptr, ALIGN_16K, size) != 0) {
+        return NULL;
+    }
+    return ptr;
+}
+
+/**
+ * 释放对齐内存
+ * 与 aligned_malloc_16k 配合使用
+ */
+static void aligned_free_16k(void* ptr) {
+    free(ptr);
+}
 
 /* ==================== 微信 Silk 文件头 ==================== */
 static const unsigned char WECHAT_SILK_HEADER[] = {0x02, '#', '!', 'S', 'I',
@@ -456,11 +487,18 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_mp3ToSilk(
   encCtrl.useDTX = SILK_USE_DTX;
   encCtrl.useInBandFEC = SILK_USE_IN_BAND_FEC;
 
-/* PCM 缓冲区 */
+/* PCM 缓冲区 - 16KB 对齐 */
 #define READ_FRAMES 1152
-  short *pcm_buffer = (short *)malloc(frameSize * 10 * sizeof(short));
+  short *pcm_buffer = (short *)aligned_malloc_16k(frameSize * 10 * sizeof(short));
   int pcm_buffer_len = 0;
   drmp3_int16 mp3_pcm[READ_FRAMES * 2];
+
+  if (!pcm_buffer) {
+    drmp3_uninit(&mp3);
+    env->ReleaseStringUTFChars(mp3Path, in_p);
+    env->ReleaseStringUTFChars(silkPath, out_p);
+    return -303;
+  }
 
   /* 编码循环 */
   while (1) {
@@ -505,7 +543,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_mp3ToSilk(
   fwrite(SILK_TERMINATOR, 1, SILK_TERMINATOR_LEN, fout);
 
   /* 资源释放 */
-  free(pcm_buffer);
+  aligned_free_16k(pcm_buffer);
   free(psEnc);
   drmp3_uninit(&mp3);
   fclose(fout);
@@ -566,9 +604,20 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_wavToSilk(
   encCtrl.useDTX = SILK_USE_DTX;
   encCtrl.useInBandFEC = SILK_USE_IN_BAND_FEC;
 
-  /* PCM 缓冲区 */
-  short *readBuf = (short *)malloc(frameSize * wav_channels * sizeof(short));
-  short *monoBuf = (short *)malloc(frameSize * sizeof(short));
+  /* PCM 缓冲区 - 16KB 对齐 */
+  short *readBuf = (short *)aligned_malloc_16k(frameSize * wav_channels * sizeof(short));
+  short *monoBuf = (short *)aligned_malloc_16k(frameSize * sizeof(short));
+
+  if (!readBuf || !monoBuf) {
+    if (readBuf) aligned_free_16k(readBuf);
+    if (monoBuf) aligned_free_16k(monoBuf);
+    drwav_uninit(&wav);
+    fclose(fout);
+    free(psEnc);
+    env->ReleaseStringUTFChars(wavPath, in_p);
+    env->ReleaseStringUTFChars(silkPath, out_p);
+    return -502;
+  }
 
   /* 编码循环 */
   while (drwav_read_pcm_frames_s16(&wav, frameSize, readBuf) ==
@@ -599,8 +648,8 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_wavToSilk(
   fwrite(SILK_TERMINATOR, 1, SILK_TERMINATOR_LEN, fout);
 
   /* 资源释放 */
-  free(readBuf);
-  free(monoBuf);
+  aligned_free_16k(readBuf);
+  aligned_free_16k(monoBuf);
   free(psEnc);
   drwav_uninit(&wav);
   fclose(fout);
@@ -661,9 +710,20 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_flacToSilk(
   encCtrl.useDTX = SILK_USE_DTX;
   encCtrl.useInBandFEC = SILK_USE_IN_BAND_FEC;
 
-  /* PCM 缓冲区 */
-  short *readBuf = (short *)malloc(frameSize * flac_channels * sizeof(short));
-  short *monoBuf = (short *)malloc(frameSize * sizeof(short));
+  /* PCM 缓冲区 - 16KB 对齐 */
+  short *readBuf = (short *)aligned_malloc_16k(frameSize * flac_channels * sizeof(short));
+  short *monoBuf = (short *)aligned_malloc_16k(frameSize * sizeof(short));
+
+  if (!readBuf || !monoBuf) {
+    if (readBuf) aligned_free_16k(readBuf);
+    if (monoBuf) aligned_free_16k(monoBuf);
+    drflac_close(pFlac);
+    fclose(fout);
+    free(psEnc);
+    env->ReleaseStringUTFChars(flacPath, in_p);
+    env->ReleaseStringUTFChars(silkPath, out_p);
+    return -602;
+  }
 
   /* 编码循环 */
   while (drflac_read_pcm_frames_s16(pFlac, frameSize, readBuf) ==
@@ -694,8 +754,8 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_flacToSilk(
   fwrite(SILK_TERMINATOR, 1, SILK_TERMINATOR_LEN, fout);
 
   /* 资源释放 */
-  free(readBuf);
-  free(monoBuf);
+  aligned_free_16k(readBuf);
+  aligned_free_16k(monoBuf);
   free(psEnc);
   drflac_close(pFlac);
   fclose(fout);
@@ -761,11 +821,22 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_oggToSilk(
   encCtrl.useDTX = SILK_USE_DTX;
   encCtrl.useInBandFEC = SILK_USE_IN_BAND_FEC;
 
-  /* PCM 缓冲区 */
+  /* PCM 缓冲区 - 16KB 对齐 */
 #define OGG_READ_FRAMES 4096
-  short *readBuf = (short *)malloc(OGG_READ_FRAMES * ogg_channels * sizeof(short));
-  short *pcmBuffer = (short *)malloc(frameSize * 2 * sizeof(short));
+  short *readBuf = (short *)aligned_malloc_16k(OGG_READ_FRAMES * ogg_channels * sizeof(short));
+  short *pcmBuffer = (short *)aligned_malloc_16k(frameSize * 2 * sizeof(short));
   int pcmBufferLen = 0;
+
+  if (!readBuf || !pcmBuffer) {
+    if (readBuf) aligned_free_16k(readBuf);
+    if (pcmBuffer) aligned_free_16k(pcmBuffer);
+    free(psEnc);
+    stb_vorbis_close(v);
+    fclose(fout);
+    env->ReleaseStringUTFChars(oggPath, in_p);
+    env->ReleaseStringUTFChars(silkPath, out_p);
+    return -402;
+  }
 
   /* 编码循环 */
   while (1) {
@@ -804,8 +875,8 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_oggToSilk(
   fwrite(SILK_TERMINATOR, 1, SILK_TERMINATOR_LEN, fout);
 
   /* 资源释放 */
-  free(readBuf);
-  free(pcmBuffer);
+  aligned_free_16k(readBuf);
+  aligned_free_16k(pcmBuffer);
   free(psEnc);
   stb_vorbis_close(v);
   fclose(fout);
@@ -899,11 +970,22 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_pcmToSilk(
   encCtrl.useDTX = SILK_USE_DTX;
   encCtrl.useInBandFEC = SILK_USE_IN_BAND_FEC;
 
-  /* PCM 缓冲区 */
+  /* PCM 缓冲区 - 16KB 对齐 */
 #define PCM_READ_FRAMES 4096
-  short *readBuf = (short *)malloc(PCM_READ_FRAMES * channels * sizeof(short));
-  short *pcmBuffer = (short *)malloc(frameSize * 10 * sizeof(short));
+  short *readBuf = (short *)aligned_malloc_16k(PCM_READ_FRAMES * channels * sizeof(short));
+  short *pcmBuffer = (short *)aligned_malloc_16k(frameSize * 10 * sizeof(short));
   int pcmBufferLen = 0;
+
+  if (!readBuf || !pcmBuffer) {
+    if (readBuf) aligned_free_16k(readBuf);
+    if (pcmBuffer) aligned_free_16k(pcmBuffer);
+    free(psEnc);
+    fclose(fin);
+    fclose(fout);
+    env->ReleaseStringUTFChars(pcmPath, in_p);
+    env->ReleaseStringUTFChars(silkPath, out_p);
+    return -703;
+  }
 
   /* 编码循环 */
   while (1) {
@@ -946,8 +1028,8 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_pcmToSilk(
   fwrite(SILK_TERMINATOR, 1, SILK_TERMINATOR_LEN, fout);
 
   /* 资源释放 */
-  free(readBuf);
-  free(pcmBuffer);
+  aligned_free_16k(readBuf);
+  aligned_free_16k(pcmBuffer);
   free(psEnc);
   fclose(fin);
   fclose(fout);
@@ -1301,9 +1383,19 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_wavToPcm(
   int wav_channels = wav.channels;
   int frame_size = 4096;
 
-  /* PCM 缓冲区 */
-  short *read_buf = (short *)malloc(frame_size * wav_channels * sizeof(short));
-  short *mono_buf = (short *)malloc(frame_size * sizeof(short));
+  /* PCM 缓冲区 - 16KB 对齐 */
+  short *read_buf = (short *)aligned_malloc_16k(frame_size * wav_channels * sizeof(short));
+  short *mono_buf = (short *)aligned_malloc_16k(frame_size * sizeof(short));
+
+  if (!read_buf || !mono_buf) {
+    if (read_buf) aligned_free_16k(read_buf);
+    if (mono_buf) aligned_free_16k(mono_buf);
+    drwav_uninit(&wav);
+    fclose(fout);
+    env->ReleaseStringUTFChars(wavPath, in_p);
+    env->ReleaseStringUTFChars(pcmPath, out_p);
+    return -502;
+  }
 
   /* 解码循环 */
   while (drwav_read_pcm_frames_s16(&wav, frame_size, read_buf) == (drwav_uint64)frame_size) {
@@ -1318,8 +1410,8 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_wavToPcm(
   }
 
   /* 资源释放 */
-  free(read_buf);
-  free(mono_buf);
+  aligned_free_16k(read_buf);
+  aligned_free_16k(mono_buf);
   drwav_uninit(&wav);
   fclose(fout);
 
@@ -1357,9 +1449,19 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_flacToPcm(
   int flac_channels = pFlac->channels;
   int frame_size = 4096;
 
-  /* PCM 缓冲区 */
-  short *read_buf = (short *)malloc(frame_size * flac_channels * sizeof(short));
-  short *mono_buf = (short *)malloc(frame_size * sizeof(short));
+  /* PCM 缓冲区 - 16KB 对齐 */
+  short *read_buf = (short *)aligned_malloc_16k(frame_size * flac_channels * sizeof(short));
+  short *mono_buf = (short *)aligned_malloc_16k(frame_size * sizeof(short));
+
+  if (!read_buf || !mono_buf) {
+    if (read_buf) aligned_free_16k(read_buf);
+    if (mono_buf) aligned_free_16k(mono_buf);
+    drflac_close(pFlac);
+    fclose(fout);
+    env->ReleaseStringUTFChars(flacPath, in_p);
+    env->ReleaseStringUTFChars(pcmPath, out_p);
+    return -602;
+  }
 
   /* 解码循环 */
   while (drflac_read_pcm_frames_s16(pFlac, frame_size, read_buf) == (drflac_uint64)frame_size) {
@@ -1374,8 +1476,8 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_flacToPcm(
   }
 
   /* 资源释放 */
-  free(read_buf);
-  free(mono_buf);
+  aligned_free_16k(read_buf);
+  aligned_free_16k(mono_buf);
   drflac_close(pFlac);
   fclose(fout);
 
@@ -1412,7 +1514,15 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_oggToPcm(
 
   /* 音频参数 */
   int frame_size = 4096;
-  short *pcm_buf = (short *)malloc(frame_size * sizeof(short));
+  short *pcm_buf = (short *)aligned_malloc_16k(frame_size * sizeof(short));
+
+  if (!pcm_buf) {
+    stb_vorbis_close(v);
+    fclose(fout);
+    env->ReleaseStringUTFChars(oggPath, in_p);
+    env->ReleaseStringUTFChars(pcmPath, out_p);
+    return -402;
+  }
 
   /* 解码循环 */
   while (1) {
@@ -1422,7 +1532,7 @@ JNIEXPORT jint JNICALL Java_me_yun_silk_SilkCodec_oggToPcm(
   }
 
   /* 资源释放 */
-  free(pcm_buf);
+  aligned_free_16k(pcm_buf);
   stb_vorbis_close(v);
   fclose(fout);
 

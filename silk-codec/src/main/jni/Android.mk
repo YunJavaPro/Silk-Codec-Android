@@ -1,7 +1,7 @@
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
-LOCAL_MODULE := silk
+LOCAL_MODULE := silk_codec
 
 LOCAL_C_INCLUDES := \
     $(LOCAL_PATH)/silk/interface \

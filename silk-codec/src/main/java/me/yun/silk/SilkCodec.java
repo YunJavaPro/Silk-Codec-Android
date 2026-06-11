@@ -6,7 +6,7 @@ public class SilkCodec {
     public static final long MAX_DURATION_MS = 60_000L;
 
     static {
-        System.loadLibrary("silk");
+        System.loadLibrary("silk_codec");
     }
 
     /**

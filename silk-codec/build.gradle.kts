@@ -10,7 +10,7 @@ android {
     defaultConfig {
         minSdk = 26
         ndk {
-            abiFilters.addAll(listOf("arm64-v8a"))
+            abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
         }
     }
 
@@ -43,7 +43,7 @@ publishing {
         create<MavenPublication>("release") {
             groupId = "com.github.YunJavaPro"
             artifactId = "silk-codec"
-            version = "1.0.2"
+            version = "1.0.3"
             afterEvaluate {
                 from(components["release"])
             }
